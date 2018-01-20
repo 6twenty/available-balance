@@ -13,76 +13,38 @@ const get = endpoint => {
   }).then(response => response.body)
 }
 
-exports.fetch = async force => {
+exports.fetch = async opts => {
   try {
     if (isFetching) {
+      log.debug(`Suppressing fetch (already fetching)`)
       return
     }
 
     isFetching = true
 
-    let user = storage.get('user')
-    let lastFetch = storage.get('lastFetch')
+    log.debug('Fetching user...')
 
-    const lastFetchTime = lastFetch ? moment(lastFetch) : null
-    const oneHourAgo = moment().subtract(1, 'hour')
+    const user = await get('me')
 
-    if (!user) {
-      log.debug('Fetching user...')
+    log.debug(' > Done')
+    log.debug('Fetching accounts...')
 
-      user = await get('me')
+    const accounts = await get(`users/${user.id}/accounts`)
 
-      storage.set('user', user)
+    log.debug(' > Done')
 
-      log.debug(' > Done')
-    }
+    user.accounts = accounts
 
-    // Limit fetching to once per hour max
-    if (!lastFetch || force || lastFetchTime.isBefore(oneHourAgo)) {
-      log.debug('Fetching accounts...')
-
-      lastFetch = moment().format()
-      accounts = await get(`users/${user.id}/accounts`)
-
-      storage.set('lastFetch', lastFetch)
-
-      isFetching = false
-
-      if (user.using_multiple_currencies) {
-        const currencies = accounts.map(account => account.currency_code.toUpperCase())
-        const url = `https://api.fixer.io/latest?symbols=${currencies.join(',')}`
-        const data = await got(url, { json: true }).then(response => response.body)
-
-        money.rates = data.rates
-        money.rates[data.base] = 1
-
-        user.net_worth = accounts.reduce((sum, account) => {
-          try {
-            return sum + money(account.current_balance)
-              .from(account.currency_code.toUpperCase())
-              .to(user.base_currency_code.toUpperCase())
-          } catch (e) {
-            // Er, just skip this account I guess
-            return sum
-          }
-        }, 0)
-      } else {
-        user.net_worth = accounts.reduce((sum, account) => {
-          return sum + account.current_balance
-        }, 0)
-      }
-
-      storage.set('user', user)
-
-      log.debug(' > Done')
-
-      return Object.assign({}, storage.all(), { accounts: accounts })
-    }
+    storage.set('user', user)
 
     isFetching = false
+
+    return user
   } catch(e) {
     isFetching = false
 
     log.error('Error fetching from API:', e)
+
+    return user
   }
 }

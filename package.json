@@ -1,26 +1,26 @@
 {
-  "name": "pocketsmith-mini",
-  "productName": "PocketSmith Mini",
+  "name": "available-balance",
+  "productName": "Available Balance",
   "version": "1.0.0",
-  "description": "PocketSmith menu bar app",
+  "description": "Available bank balance via PocketSmith",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "package": "electron-packager ./ 'PocketSmith Mini' --out=./packages/ --overwrite"
+    "package": "electron-packager ./ 'Available Balance' --out=./packages/ --overwrite"
   },
-  "repository": "https://github.com/6twenty/pocketsmith-mini",
+  "repository": "https://github.com/6twenty/available-balance",
   "keywords": [],
   "author": "Mike Fulcher",
   "license": "CC0-1.0",
   "devDependencies": {
-    "electron": "^1.6.10",
-    "electron-packager": "^8.7.0"
+    "electron": "^1.8.1",
+    "electron-packager": "^8.7.2"
   },
   "dependencies": {
     "accounting-js": "^1.1.1",
-    "electron-log": "^2.2.6",
+    "electron-log": "^2.2.14",
     "got": "^6.7.1",
-    "moment": "^2.18.1",
+    "moment": "^2.20.1",
     "money": "^0.2.0"
   }
 }

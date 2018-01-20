@@ -5,14 +5,13 @@ const api = require('./api')
 const {apiKey} = require('./config')
 const storage = require('./storage')(apiKey)
 
-let user = storage.get('user')
-let tray
-let window
-let menu
-
 const shouldQuit = app.makeSingleInstance((argv, workingDirectory) => {
   // Could focus the app window here
 })
+
+let user
+let tray
+let menu
 
 if (shouldQuit) {
   app.quit()
@@ -20,116 +19,76 @@ if (shouldQuit) {
 
 const loginSettings = app.getLoginItemSettings()
 
-app.on('ready', _ => {
+app.on('ready', async _ => {
   if (app.dock) app.dock.hide()
 
-  if (!storage.has('netWorthEnabled')) {
-    storage.set('netWorthEnabled', true)
-  }
+  user = storage.get('user')
 
   buildTray()
-  buildWindow()
   buildMenu()
+  update()
+
+  setInterval(update, 1000 * 60) // Every minute
 })
+
+const update = async _ => {
+  user = await api.fetch()
+
+  buildMenu()
+}
 
 const buildTray = _ => {
   tray = new Tray(path.join(__dirname, 'IconTemplate.png'))
-
-  tray.setHighlightMode('never')
-
-  tray.on('click', event => {
-    window.isVisible() ? hide() : show()
-
-    // Show devtools when ctrl clicked
-    if (window.isVisible() && process.defaultApp && event.ctrlKey) {
-      window.openDevTools({ mode: 'detach' })
-    }
-  })
-}
-
-const buildWindow = _ => {
-  window = new BrowserWindow({
-    width: 300,
-    height: 300,
-    show: false,
-    frame: false,
-    resizable: false,
-    hasShadow: false,
-    transparent: true
-  })
-
-  window.loadURL(`file://${path.join(__dirname, 'index.html')}`)
-
-  window.on('ready-to-show', _ => {
-    refresh(true)
-  })
-
-  window.on('blur', _ => {
-    tray.setHighlightMode('never')
-
-    const devToolsOpen = window.webContents.isDevToolsOpened()
-
-    // Only close the window on blur if dev tools isn't opened
-    if (!devToolsOpen) {
-      hide()
-    }
-  })
-
-  window.on('hide', _ => {
-    tray.setHighlightMode('never')
-  })
-
-  window.on('focus', _ => {
-    tray.setHighlightMode('always')
-  })
-
-  window.on('show', _ => {
-    tray.setHighlightMode('always')
-
-    window.webContents.send('show', window.getBounds(), tray.getBounds())
-
-    refresh()
-  })
 }
 
 const buildMenu = _ => {
-  let netWorth
+  const menuTemplate = []
 
-  if (user && user.net_worth) {
-     netWorth = accounting.formatMoney(user.net_worth, {
+  if (user) {
+    const accounts = user.accounts.filter(account => !account.is_net_worth)
+
+    const activeAccountIds = storage.get('activeAccounts') || accounts.reduce((active, account) => {
+      active[account.id] = true
+
+      return active
+    }, {})
+
+    const sum = accounts.filter(account => activeAccountIds[account.id]).reduce((sum, account) => {
+      return sum + account.current_balance
+    }, 0)
+
+    const balance = accounting.formatMoney(sum, {
       symbol: user.base_currency_code,
       format: user.using_multiple_currencies ? "%v %s" : "%v"
     })
-  }
 
-  menu = Menu.buildFromTemplate([
-    {
-      label: user ? `Connected as ${user.login}` : 'Connecting...',
+    menuTemplate.push({
+      label: `${user.login}: ${balance}`,
       enabled: false
-    },
-    {
-      label: netWorth ? `Net Worth: ${netWorth}` : '-',
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: 'Sync Now',
-      click: (menuItem, browserWindow, event) => {
-        refresh(true)
-      }
-    },
-    {
+    }, {
+      type: 'separator'
+    })
+
+    accounts.forEach(account => {
+      menuTemplate.push({
+        type: 'checkbox',
+        label: account.title,
+        checked: activeAccountIds[account.id],
+        click: (menuItem, _, event) => {
+          activeAccountIds[account.id] = menuItem.checked
+
+          storage.set('activeAccounts', activeAccountIds)
+
+          buildMenu()
+        }
+      })
+    })
+
+    menuTemplate.push({
+      type: 'separator'
+    }, {
       type: 'checkbox',
-      label: 'Show Net Worth Assets',
-      checked: storage.get('netWorthEnabled'),
-      click: (menuItem, browserWindow, event) => {
-        window.webContents.send('toggle-net-worth', menuItem.checked)
-        storage.set('netWorthEnabled', menuItem.checked)
-      }
-    },
-    {
-      type: 'checkbox',
-      label: 'Start On Login',
+      label: `Start On Login`,
       checked: loginSettings.openAtLogin,
       click: (menuItem, browserWindow, event) => {
         app.setLoginItemSettings({
@@ -137,54 +96,20 @@ const buildMenu = _ => {
           openAsHidden: menuItem.checked
         })
       }
-    },
-    { type: 'separator' },
-    {
-      role: 'quit'
-    }
-  ])
+    }, {
+      type: 'separator'
+    }, {
+      role: 'quit',
+      label: `Quit`
+    })
+  } else {
+    menuTemplate.push({
+      label: `Connecting...`,
+      enabled: false
+    })
+  }
+
+  menu = Menu.buildFromTemplate(menuTemplate)
+
+  tray.setContextMenu(menu)
 }
-
-const show = _ => {
-  positionWindow()
-  window.show()
-  window.focus()
-}
-
-const hide = _ => {
-  window.hide()
-}
-
-const positionWindow = _ => {
-  const trayBounds = tray.getBounds()
-  const windowBounds = window.getBounds()
-
-  let x = Math.round(trayBounds.x + (trayBounds.width / 2) - (windowBounds.width / 2))
-  let y = Math.round(trayBounds.y + trayBounds.height)
-
-  window.setPosition(x, y, false)
-}
-
-const refresh = force => {
-  window.webContents.send('will-refresh')
-
-  api.fetch(force).then(data => {
-    window.webContents.send('did-refresh', data)
-
-    // If receiving an updated user, rebuild the menu
-    if (data && data.user) {
-      if (!user || user.net_worth != data.user.net_worth) {
-        user = data.user
-        buildMenu()
-      }
-    }
-  })
-}
-
-ipcMain.on('show-settings-menu', event => {
-  const bounds = window.getBounds()
-  const x = bounds.width / 2
-  const y = bounds.height - 20
-
-  menu.popup(window, { x: x, y: y })
-})
