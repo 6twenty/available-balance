@@ -1,6 +1,6 @@
 const path = require('path')
 const accounting = require('accounting-js')
-const {app, BrowserWindow, ipcMain, Tray, nativeImage, Menu, MenuItem} = require('electron')
+const {app, Tray, Menu, MenuItem} = require('electron')
 const api = require('./api')
 const {apiKey} = require('./config')
 const storage = require('./storage')(apiKey)
@@ -15,6 +15,7 @@ let menu
 
 if (shouldQuit) {
   app.quit()
+  return
 }
 
 const loginSettings = app.getLoginItemSettings()
@@ -79,28 +80,11 @@ const buildMenu = _ => {
 
           storage.set('activeAccounts', activeAccountIds)
 
+          // Can't just update the balance menu item;
+          // need to rebuild the whole menu
           buildMenu()
         }
       })
-    })
-
-    menuTemplate.push({
-      type: 'separator'
-    }, {
-      type: 'checkbox',
-      label: `Start On Login`,
-      checked: loginSettings.openAtLogin,
-      click: (menuItem, browserWindow, event) => {
-        app.setLoginItemSettings({
-          openAtLogin: menuItem.checked,
-          openAsHidden: menuItem.checked
-        })
-      }
-    }, {
-      type: 'separator'
-    }, {
-      role: 'quit',
-      label: `Quit`
     })
   } else {
     menuTemplate.push({
@@ -108,6 +92,25 @@ const buildMenu = _ => {
       enabled: false
     })
   }
+
+  menuTemplate.push({
+    type: 'separator'
+  }, {
+    type: 'checkbox',
+    label: `Start On Login`,
+    checked: loginSettings.openAtLogin,
+    click: (menuItem, browserWindow, event) => {
+      app.setLoginItemSettings({
+        openAtLogin: menuItem.checked,
+        openAsHidden: menuItem.checked
+      })
+    }
+  }, {
+    type: 'separator'
+  }, {
+    role: 'quit',
+    label: `Quit`
+  })
 
   menu = Menu.buildFromTemplate(menuTemplate)
 
