@@ -33,7 +33,12 @@ app.on('ready', async _ => {
 })
 
 const update = async _ => {
-  user = await api.fetch()
+  try {
+    user = await api.fetch()
+  } catch (e) {
+    console.error(e)
+    return
+  }
 
   buildMenu()
 }

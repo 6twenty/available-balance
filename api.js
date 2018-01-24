@@ -14,6 +14,8 @@ const get = endpoint => {
 }
 
 exports.fetch = async opts => {
+  let user
+
   try {
     if (isFetching) {
       log.debug(`Suppressing fetch (already fetching)`)
@@ -24,16 +26,14 @@ exports.fetch = async opts => {
 
     log.debug('Fetching user...')
 
-    const user = await get('me')
+    user = await get('me')
 
     log.debug(' > Done')
     log.debug('Fetching accounts...')
 
-    const accounts = await get(`users/${user.id}/accounts`)
+    user.accounts = await get(`users/${user.id}/accounts`)
 
     log.debug(' > Done')
-
-    user.accounts = accounts
 
     storage.set('user', user)
 
