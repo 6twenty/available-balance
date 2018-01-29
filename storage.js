@@ -29,6 +29,10 @@ const save = _ => {
 }
 
 module.exports = storeKey => {
+  if (!storeKey) {
+    throw new Error(`Storage: no key provided`)
+  }
+
   const hashedKey = crypto.createHash('sha256').update(storeKey).digest('hex')
   const store = {}
 

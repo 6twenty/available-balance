@@ -1,9 +1,10 @@
 const path = require('path')
 const accounting = require('accounting-js')
-const {app, Tray, Menu, MenuItem} = require('electron')
+const log = require('electron-log')
+const {app, Tray, Menu, MenuItem, BrowserWindow, ipcMain} = require('electron')
 const api = require('./api')
 const {apiKey} = require('./config')
-const storage = require('./storage')(apiKey)
+const storage = require('./storage')
 
 const shouldQuit = app.makeSingleInstance((argv, workingDirectory) => {
   // Could focus the app window here
@@ -12,18 +13,47 @@ const shouldQuit = app.makeSingleInstance((argv, workingDirectory) => {
 let user
 let tray
 let menu
+let win
+let isOnline = false
+let waiting
+let store
+
+try {
+  store = storage(apiKey)
+} catch (e) {
+  log.debug(`Storage error: ${e}`)
+}
 
 if (shouldQuit) {
   app.quit()
   return
 }
 
+ipcMain.on('online-status-changed', (event, status) => {
+  isOnline = status === 'online'
+
+  log.debug(`Online status is: ${status}`)
+
+  if (isOnline) {
+    update()
+  } else {
+    queueUpdate()
+  }
+})
+
 const loginSettings = app.getLoginItemSettings()
 
 app.on('ready', async _ => {
+  win = new BrowserWindow({ width: 0, height: 0, show: false })
+  win.loadURL(`file://${__dirname}/online.html`)
+
   if (app.dock) app.dock.hide()
 
-  user = storage.get('user')
+  try {
+    user = store.get('user')
+  } catch (e) {
+    log.debug(`Storage error: ${e}`)
+  }
 
   buildTray()
   buildMenu()
@@ -32,14 +62,36 @@ app.on('ready', async _ => {
   setInterval(update, 1000 * 60) // Every minute
 })
 
+const queueUpdate = _ => {
+  log.debug(`Queueing update attempt in 10s`)
+
+  waiting = setTimeout(_ => {
+    if (isOnline) {
+      update()
+    } else {
+      queueUpdate()
+    }
+  }, 10 * 1000)
+}
+
 const update = async _ => {
-  try {
-    user = await api.fetch()
-  } catch (e) {
-    console.error(e)
-    return
+  log.debug(`Starting update`)
+
+  if (waiting) {
+    clearTimeout(waiting)
+    waiting = null
   }
 
+  if (isOnline) {
+    try {
+      log.debug(`Fetching user`)
+      user = await api.fetch()
+    } catch (e) {
+      // It's ok
+    }
+  }
+
+  log.debug(`Refreshing menu`)
   buildMenu()
 }
 
@@ -50,10 +102,24 @@ const buildTray = _ => {
 const buildMenu = _ => {
   const menuTemplate = []
 
+  if (apiKey && (!user || isOnline === false)) {
+    menuTemplate.push({
+      label: `Connecting...`,
+      enabled: false
+    })
+  }
+
+  if (!apiKey) {
+    menuTemplate.push({
+      label: `No API key provided`,
+      enabled: false
+    })
+  }
+
   if (user) {
     const accounts = user.accounts.filter(account => !account.is_net_worth)
 
-    const activeAccountIds = storage.get('activeAccounts') || accounts.reduce((active, account) => {
+    const activeAccountIds = store.get('activeAccounts') || accounts.reduce((active, account) => {
       active[account.id] = true
 
       return active
@@ -83,18 +149,13 @@ const buildMenu = _ => {
         click: (menuItem, _, event) => {
           activeAccountIds[account.id] = menuItem.checked
 
-          storage.set('activeAccounts', activeAccountIds)
+          store.set('activeAccounts', activeAccountIds)
 
           // Can't just update the balance menu item;
           // need to rebuild the whole menu
           buildMenu()
         }
       })
-    })
-  } else {
-    menuTemplate.push({
-      label: `Connecting...`,
-      enabled: false
     })
   }
 
