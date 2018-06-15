@@ -37,7 +37,7 @@ exports.fetch = async opts => {
 
     log.debug('Fetching user...')
 
-    user = await get('me')
+    user = store.get('user') || await get('me')
 
     log.debug(' > Done')
     log.debug('Fetching accounts...')
