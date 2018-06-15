@@ -29,16 +29,15 @@ if (shouldQuit) {
   return
 }
 
-ipcMain.on('online-status-changed', (event, status) => {
-  isOnline = status === 'online'
+ipcMain.on('online', event => {
+  isOnline = true
+  log.debug(`Online status is: online`)
+  update()
+})
 
-  log.debug(`Online status is: ${status}`)
-
-  if (isOnline) {
-    update()
-  } else {
-    queueUpdate()
-  }
+ipcMain.on('offline', event => {
+  isOnline = false
+  log.debug(`Online status is: offline`)
 })
 
 const loginSettings = app.getLoginItemSettings()
@@ -61,18 +60,6 @@ app.on('ready', async _ => {
 
   setInterval(update, 1000 * 60) // Every minute
 })
-
-const queueUpdate = _ => {
-  log.debug(`Queueing update attempt in 10s`)
-
-  waiting = setTimeout(_ => {
-    if (isOnline) {
-      update()
-    } else {
-      queueUpdate()
-    }
-  }, 10 * 1000)
-}
 
 const update = async _ => {
   log.debug(`Starting update`)

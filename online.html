@@ -2,15 +2,12 @@
 <html>
   <body>
     <script>
-      const {ipcRenderer} = require('electron')
-      const updateOnlineStatus = () => {
-        ipcRenderer.send('online-status-changed', navigator.onLine ? 'online' : 'offline')
-      }
+      const {ipcRenderer:ipc} = require('electron')
 
-      window.addEventListener('online',  updateOnlineStatus)
-      window.addEventListener('offline',  updateOnlineStatus)
+      window.addEventListener('online', () => ipc.send('online'))
+      window.addEventListener('offline', () => ipc.send('offline'))
 
-      updateOnlineStatus()
+      ipc.send(navigator.onLine ? 'online' : 'offline')
     </script>
   </body>
 </html>
